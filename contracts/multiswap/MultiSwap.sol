@@ -134,7 +134,9 @@ contract MultiSwap is ERC20, Whitelist, ReentrancyGuard {
     quoteAmounts will provide the current totalSupply and expected deposit amounts.
     Use the totalSupply to calcuate lower and upper bounds.
   */
-  function deposit(uint256 pct, uint256[] memory quoteAmountsIn) external nonReentrant onlyWhitelist {
+  function deposit(uint256 pct, uint256 lower, uint256 upper, uint256[] memory quoteAmountsIn) external nonReentrant onlyWhitelist {
+    uint256 totalSupply = totalSupply();
+    require(totalSupply >= lower && totalSupply <= upper, '!bounds');
     uint256 len = collateral.length();
     require(quoteAmountsIn.length >= len, '!len');
     for (uint256 i = 0; i < len; i++) {
@@ -148,7 +150,7 @@ contract MultiSwap is ERC20, Whitelist, ReentrancyGuard {
       pair.collateral = pair.collateral.add(amount);
       IERC20(token).transferFrom(msg.sender, address(this), amount);
     }
-    uint256 share = totalSupply().mul(pct).div(PCT_BASE);
+    uint256 share = totalSupply.mul(pct).div(PCT_BASE);
     _mint(msg.sender, share);
   }
 

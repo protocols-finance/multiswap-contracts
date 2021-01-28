@@ -189,10 +189,11 @@ contract("MultiSwap Test", async accounts => {
     console.log('quoteAmounts', quotes);
     const liquidity = quotes[nTokens];
     logEther('liquidity', liquidity);
+    const one = liquidity.mul(new BN('100')).div(pctBase); // 1%
 
-    // deposit 25% more
-    // TODO need to check quotes to make sure they are within tollerances
-    await multiSwap.deposit(pct, quotes, {from: member1});
+    // deposit 25% more, bounded by current liquidity +- 1%
+    // TODO check quotes are within tollerances
+    await multiSwap.deposit(pct, liquidity.sub(one), liquidity.add(one), quotes, {from: member1});
     let dswpMember1 = await multiSwap.balanceOf(member1);
     logEther('member1', dswpMember1);
 
@@ -270,10 +271,11 @@ contract("MultiSwap Test", async accounts => {
       console.log('quoteAmounts', quotes);
       const liquidity = quotes[nTokens];
       logEther('liquidity', liquidity);
+      const one = liquidity.mul(new BN('100')).div(pctBase); // 1%
 
-      // deposit 25% more
-      // TODO need to check quotes to make sure they are within tollerances
-      await multiSwap.deposit(pct, quotes, {from: member1});
+      // deposit 25% more, bounded by current liquidity +- 1%
+      // TODO check quotes are within tollerances
+      await multiSwap.deposit(pct, liquidity.sub(one), liquidity.add(one), quotes, {from: member1});
       let dswpMember1 = await multiSwap.balanceOf(member1);
       logEther('member1', dswpMember1);
 
