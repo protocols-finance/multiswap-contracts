@@ -114,21 +114,38 @@ contract MultiSwap is ERC20, Whitelist, ReentrancyGuard {
     _mint(msg.sender, share);
   }
 
+  function quoteAmounts(uint256 pct) external view returns(uint256[] memory amounts) {
+    uint256 totalSupply = totalSupply();
+    uint256 len = collateral.length();
+    amounts = new uint256[](len+1);
+    for (uint256 i = 0; i < len; i++) {
+      address token = collateral.at(i);
+      require(_activePair(token), '!pair');
+      Pair storage pair = pairs[token];
+      uint256 units = pair.unit.mul(pct).div(PCT_BASE);
+      amounts[i] = units.mul(pair.collateral).div(pair.unit);
+    }
+    amounts[len] = totalSupply;
+  }
+
   /*
-    Note: slippages need to be specified here also. Similar to
-    when adding liquidity to a Uniswap pair. To prevent depositing
-    at a bad price in a pair that gets arbitraged after the deposit.
+    Important safety checks must be performed before using this method.
+
+    quoteAmounts will provide the current totalSupply and expected deposit amounts.
+    Use the totalSupply to calcuate lower and upper bounds.
   */
-  function deposit(uint256 pct, uint256 lower, uint256 upper) external nonReentrant onlyWhitelist {
+  function deposit(uint256 pct, uint256 lower, uint256 upper, uint256[] memory quoteAmountsIn) external nonReentrant onlyWhitelist {
     uint256 totalSupply = totalSupply();
     require(totalSupply >= lower && totalSupply <= upper, '!bounds');
     uint256 len = collateral.length();
+    require(quoteAmountsIn.length >= len, '!len');
     for (uint256 i = 0; i < len; i++) {
       address token = collateral.at(i);
       require(_activePair(token), '!pair');
       Pair storage pair = pairs[token];
       uint256 units = pair.unit.mul(pct).div(PCT_BASE);
       uint256 amount = units.mul(pair.collateral).div(pair.unit);
+      require(amount >= quoteAmountsIn[i], '!quoteAmountsIn');
       pair.unit = pair.unit.add(units);
       pair.collateral = pair.collateral.add(amount);
       IERC20(token).transferFrom(msg.sender, address(this), amount);
@@ -139,9 +156,10 @@ contract MultiSwap is ERC20, Whitelist, ReentrancyGuard {
 
   function withdrawAmounts(uint256 unit) external view returns(uint256[] memory outs) {
     require(unit <= balanceOf(msg.sender), '!unit');
-    uint256 share = unit.mul(1e18).div(totalSupply());
+    uint256 totalSupply = totalSupply();
+    uint256 share = unit.mul(1e18).div(totalSupply);
     uint256 len = collateral.length();
-    outs = new uint256[](len);
+    outs = new uint256[](len+1);
     for (uint256 i = 0; i < len; i++) {
       address token = collateral.at(i);
       require(_activePair(token), '!pair');
@@ -149,17 +167,20 @@ contract MultiSwap is ERC20, Whitelist, ReentrancyGuard {
       uint256 units = pair.unit.mul(share).div(1e18);
       outs[i] = units.mul(pair.collateral).div(pair.unit);
     }
+    outs[len] = totalSupply;
   }
 
   /*
+    Important safety checks must be performed before using this method.
+
     minOuts is withdrawAmounts
   */
   function withdraw(uint256 unit, uint256[] memory minOuts) external nonReentrant onlyWhitelist {
     require(unit <= balanceOf(msg.sender), '!share');
     uint256 len = minOuts.length;
-    require(len == collateral.length(), '!len');
+    require(len >= collateral.length(), '!len');
     uint256 share = unit.mul(1e18).div(totalSupply());
-    for (uint256 i = 0; i < len; i++) {
+    for (uint256 i = 0; i < collateral.length(); i++) {
       uint256 minOut = minOuts[i];
       address token = collateral.at(i);
       require(minOut > 0 && _activePair(token), '!pair');

@@ -147,6 +147,7 @@ contract("MultiSwap Test", async accounts => {
 
     const tokens = await multiSwap.tokens();
     console.log('tokens', tokens);
+    const nTokens = tokens.length;
 
     const collaterals = [
       toWei(new BN('1000')),
@@ -182,14 +183,16 @@ contract("MultiSwap Test", async accounts => {
     const dusdcDep = await DUSDC.balanceOf(multiSwap.address);
     logEther('DUSDC Deposited', dusdcDep);
 
-    const pctBase = new BN('10000');
-    const liquidity = await multiSwap.totalSupply();
-    logEther('liquidity', liquidity);
-    const five = liquidity.mul(new BN('500')).div(pctBase); // 5%
-    // deposit 25% more, bounded by current liquidity +- 5%
     const pct = new BN('2500');
+    const pctBase = new BN('10000');
+    const quotes = await multiSwap.quoteAmounts(pct);
+    console.log('quoteAmounts', quotes);
+    const liquidity = quotes[nTokens];
+    logEther('liquidity', liquidity);
+    const one = liquidity.mul(new BN('100')).div(pctBase); // 1%
 
-    await multiSwap.deposit(pct, liquidity.sub(five), liquidity.add(five), {from: member1});
+    // deposit 25% more, bounded by current liquidity +- 1%
+    await multiSwap.deposit(pct, liquidity.sub(one), liquidity.add(one), quotes, {from: member1});
     let dswpMember1 = await multiSwap.balanceOf(member1);
     logEther('member1', dswpMember1);
 
@@ -260,11 +263,17 @@ contract("MultiSwap Test", async accounts => {
       await multiSwap.initialize(collaterals, amounts);
       let dswpDev = await multiSwap.balanceOf(dev);
       logEther('dswp dev', dswpDev);
-      const five = liquidity.mul(new BN('500')).div(pctBase); // 5%
-      // deposit 25% more, bounded by current liquidity +- 5%
-      const pct = new BN('2500');
 
-      await multiSwap.deposit(pct, liquidity.sub(five), liquidity.add(five), {from: member1});
+      const pct = new BN('2500');
+      const pctBase = new BN('10000');
+      const quotes = await multiSwap.quoteAmounts(pct);
+      console.log('quoteAmounts', quotes);
+      const liquidity = quotes[nTokens];
+      logEther('liquidity', liquidity);
+      const one = liquidity.mul(new BN('100')).div(pctBase); // 1%
+
+      // deposit 25% more, bounded by current liquidity +- 1%
+      await multiSwap.deposit(pct, liquidity.sub(one), liquidity.add(one), quotes, {from: member1});
       let dswpMember1 = await multiSwap.balanceOf(member1);
       logEther('member1', dswpMember1);
 
