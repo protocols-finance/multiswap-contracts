@@ -114,6 +114,11 @@ contract MultiSwap is ERC20, Whitelist, ReentrancyGuard {
     _mint(msg.sender, share);
   }
 
+  /*
+    Note: slippages need to be specified here also. Similar to
+    when adding liquidity to a Uniswap pair. To prevent depositing
+    at a bad price in a pair that gets arbitraged after the deposit.
+  */
   function deposit(uint256 pct, uint256 lower, uint256 upper) external nonReentrant onlyWhitelist {
     uint256 totalSupply = totalSupply();
     require(totalSupply >= lower && totalSupply <= upper, '!bounds');
