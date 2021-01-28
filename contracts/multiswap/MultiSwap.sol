@@ -145,7 +145,7 @@ contract MultiSwap is ERC20, Whitelist, ReentrancyGuard {
       Pair storage pair = pairs[token];
       uint256 units = pair.unit.mul(pct).div(PCT_BASE);
       uint256 amount = units.mul(pair.collateral).div(pair.unit);
-      require(amount >= quoteAmountsIn[i], '!quoteAmountsIn');
+      require(amount <= quoteAmountsIn[i], '!quoteAmountsIn');
       pair.unit = pair.unit.add(units);
       pair.collateral = pair.collateral.add(amount);
       IERC20(token).transferFrom(msg.sender, address(this), amount);
