@@ -6,4 +6,5 @@ package-lock.json
 contracts/inprogress
 test/*inprogress*.js
 migrations/*inprogress*.js
+migrations/ignore
 yarn-lock.json

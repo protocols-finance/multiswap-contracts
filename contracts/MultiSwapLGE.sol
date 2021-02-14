@@ -20,7 +20,8 @@ contract MultiSwapLGE is Ownable {
   event LiquidityAdded(address indexed dst, uint value);
 
   address public fund;
-  uint256 public fundPctLiq = 2000;
+  uint256 public fundFee;
+  uint256 public fundPctLiq = 1000;
   uint256 public fundPctToken = 2000;
   uint256 constant FUND_BASE = 10000;
   uint256 constant MIN_FUND_PCT = 100;
@@ -132,33 +133,31 @@ contract MultiSwapLGE is Ownable {
   function generateLPTokens() public {
     require(lgeInProgress() == false, "LGE still in progress");
     require(LPGenerationCompleted == false, "LP tokens already generated");
-    totalETHContributed = address(this).balance;
+    uint256 total = totalETHContributed; // gas
 
     //Wrap eth
-    Iweth.deposit{ value: totalETHContributed }();
-    require(address(this).balance == 0 , "WETH transfer failed");
-    // Transfer tokens to pair and create
-    Iweth.transfer(address(IPAIR), totalETHContributed);
+    Iweth.deposit{ value: total }();
+    require(IERC20(address(Iweth)).balanceOf(address(this)) == total, '!weth');
+    Iweth.transfer(address(IPAIR), total);
+
     uint256 multiBalance = IMULTI.balanceOf(address(this));
     IMULTI.safeTransfer(address(IPAIR), multiBalance);
     IPAIR.mint(address(this));
     totalLPTokensMinted = IPAIR.balanceOf(address(this));
     require(totalLPTokensMinted != 0 , "LP creation failed");
-    // Account for fund fee
     if (fund != address(0)) {
-      uint256 fundLiqFee = totalLPTokensMinted.mul(fundPctLiq).div(FUND_BASE);
-      if (fundLiqFee > 0) {
-        IPAIR.transfer(fund, fundLiqFee);
-        totalLPTokensMinted -= fundLiqFee;
-      }
+      // Mint MULTI tokens for fund
       uint256 fundTokenFee = multiBalance.mul(fundPctToken).div(FUND_BASE);
       if (fundTokenFee > 0) {
         IMintToLGE(address(IMULTI)).mintToLGE(fundTokenFee);
         IMULTI.safeTransfer(fund, fundTokenFee);
       }
+      // send remaining ETH to fund
+      (bool success, ) = fund.call.value(address(this).balance)("");
+      require(success, "Transfer failed.");
     }
     // Calculate LP tokens per eth
-    LPperETHUnit = totalLPTokensMinted.mul(PRECISION).div(totalETHContributed);
+    LPperETHUnit = totalLPTokensMinted.mul(PRECISION).div(total);
     require(LPperETHUnit != 0 , "LP creation failed");
     LPGenerationCompleted = true;
   }
@@ -175,11 +174,14 @@ contract MultiSwapLGE is Ownable {
 
   function _addLiquidity() internal {
     require(msg.value >= minEth, '!minEth');
-    ethContributed[msg.sender] += msg.value;
+    uint256 fee = msg.value.mul(fundPctLiq).div(FUND_BASE);
+    fundFee = fundFee.add(fee);
+    uint256 contrib = msg.value.sub(fee, '!fee');
+    ethContributed[msg.sender] += contrib;
     require(ethContributed[msg.sender] <= maxEth);
-    totalETHContributed = totalETHContributed.add(msg.value);
+    totalETHContributed = totalETHContributed.add(contrib);
     require(totalETHContributed <= cap, '!cap');
-    uint256 amount = msg.value * multiPerEth;
+    uint256 amount = contrib * multiPerEth;
     if (amount > 0) {
       IMintToLGE(address(IMULTI)).mintToLGE(amount);
     }
@@ -190,8 +192,8 @@ contract MultiSwapLGE is Ownable {
     require(LPGenerationCompleted, "!LP generated");
     require(ethContributed[msg.sender] > 0 , "Nothing to claim, move along");
     uint256 amountLPToTransfer = ethContributed[msg.sender].mul(LPperETHUnit).div(PRECISION);
-    IPAIR.transfer(msg.sender, amountLPToTransfer);
     ethContributed[msg.sender] = 0;
+    IPAIR.transfer(msg.sender, amountLPToTransfer);
     emit LPTokenClaimed(msg.sender, amountLPToTransfer);
   }
 

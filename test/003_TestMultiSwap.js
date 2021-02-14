@@ -1,5 +1,4 @@
 const MultiSwapToken = artifacts.require("MultiSwapToken");
-const Timelock2Days = artifacts.require("Timelock2Days");
 const IERC20 = artifacts.require("IERC20");
 const MultiSwap = artifacts.require("MultiSwap");
 const DummyBTC = artifacts.require("DummyBTC");
@@ -108,7 +107,6 @@ contract("MultiSwap Test", async accounts => {
   beforeEach(async () => {
     MULTI = await MultiSwapToken.deployed();
     console.log('MULTI', MULTI.address);
-    timelock = await Timelock2Days.deployed();
     multiSwap = await MultiSwap.deployed();
     DBTC = await DummyBTC.deployed();
     DETH = await DummyETH.deployed();
