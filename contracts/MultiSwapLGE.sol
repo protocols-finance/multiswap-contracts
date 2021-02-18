@@ -4,7 +4,6 @@ import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "./Ownable.sol";
-import "./IMintToLGE.sol";
 import "./utils/Console.sol";
 import "./interfaces/IWETH.sol";
 import "./interfaces/IUniswapV2Pair.sol";
@@ -21,19 +20,19 @@ contract MultiSwapLGE is Ownable {
 
   address public fund;
   uint256 public fundFee;
-  uint256 public fundPctLiq = 1000;
-  uint256 public fundPctToken = 2000;
+  uint256 public fundPctLiq = 2000;
   uint256 constant FUND_BASE = 10000;
-  uint256 constant MIN_FUND_PCT = 100;
-  uint256 constant MAX_FUND_PCT = 2000;
-  uint256 constant MIN_LGE_LENGTH = 1 hours;
+
+  uint256 constant MIN_FUND_PCT = 1000;
+  uint256 constant MAX_FUND_PCT = 5000;
+  uint256 constant MIN_LGE_LENGTH = 2 hours;
   uint256 constant MAX_LGE_LENGTH = 14 days;
   uint256 constant MIN_MULTI_PER_ETH = 1;
   uint256 constant MIN_MIN_ETH = 1 ether / 10;
   uint256 constant MAX_MIN_ETH = 2 ether;
-  uint256 constant MIN_MAX_ETH = 100 ether;
+  uint256 constant MIN_MAX_ETH = 10 ether;
   uint256 constant MAX_MAX_ETH = 2000 ether;
-  uint256 constant MIN_CAP = 1000 ether;
+  uint256 constant MIN_CAP = 500 ether;
   uint256 constant MAX_CAP = 50_000 ether;
   uint256 constant PRECISION = 1e18;
 
@@ -42,11 +41,15 @@ contract MultiSwapLGE is Ownable {
   IUniswapV2Factory uniswapFactory;
   IUniswapV2Router02 uniswapRouterV2;
 
+  uint256 public airdropTotal;
+  mapping (address => uint256) public registeredAirdrop;
+  mapping (address => uint256) public confirmedAirdrop;
+
   IUniswapV2Pair public IPAIR;
   uint256 minEth = 1 ether / 2;
-  uint256 maxEth = 1000 ether;
-  uint256 cap = 20000 ether;
-  uint256 public multiPerEth = 300;
+  uint256 maxEth = 100 ether;
+  uint256 cap = 1000 ether;
+  uint256 public multiPerEth = 3000;
   uint256 public lgeLength = 7 days;
   uint256 public contractStartTimestamp;
   bool public LGEFinished;
@@ -69,6 +72,11 @@ contract MultiSwapLGE is Ownable {
     IPAIR = IUniswapV2Pair(uniswapFactory.createPair(WETH, multi));
   }
 
+  function registerAirdrop(uint256 total) external {
+    airdropTotal += total;
+    registeredAirdrop[msg.sender] = registeredAirdrop[msg.sender] + total;
+  }
+
   function setMinEth(uint256 _minEth) onlyOwner external {
     require(_minEth >= MIN_MIN_ETH && _minEth <= MAX_MIN_ETH);
     minEth = _minEth;
@@ -87,11 +95,6 @@ contract MultiSwapLGE is Ownable {
   function setFundPctLiq(uint256 _fundPctLiq) onlyOwner external {
     require(_fundPctLiq == 0 || (_fundPctLiq >= MIN_FUND_PCT && _fundPctLiq <= MAX_FUND_PCT));
     fundPctLiq = _fundPctLiq;
-  }
-
-  function setFundPctToken(uint256 _fundPctToken) onlyOwner external {
-    require(_fundPctToken == 0 || (_fundPctToken >= MIN_FUND_PCT && _fundPctToken <= MAX_FUND_PCT));
-    fundPctToken = _fundPctToken;
   }
 
   function setMultiPerEth(uint256 _multiPerEth) onlyOwner external {
@@ -146,12 +149,6 @@ contract MultiSwapLGE is Ownable {
     totalLPTokensMinted = IPAIR.balanceOf(address(this));
     require(totalLPTokensMinted != 0 , "LP creation failed");
     if (fund != address(0)) {
-      // Mint MULTI tokens for fund
-      uint256 fundTokenFee = multiBalance.mul(fundPctToken).div(FUND_BASE);
-      if (fundTokenFee > 0) {
-        IMintToLGE(address(IMULTI)).mintToLGE(fundTokenFee);
-        IMULTI.safeTransfer(fund, fundTokenFee);
-      }
       // send remaining ETH to fund
       (bool success, ) = fund.call.value(address(this).balance)("");
       require(success, "Transfer failed.");
@@ -183,16 +180,23 @@ contract MultiSwapLGE is Ownable {
     require(totalETHContributed <= cap, '!cap');
     uint256 amount = contrib * multiPerEth;
     if (amount > 0) {
-      IMintToLGE(address(IMULTI)).mintToLGE(amount);
+      IMULTI.safeTransferFrom(fund, address(this), amount);
     }
     emit LiquidityAdded(msg.sender, msg.value);
   }
 
   function claimLPTokens() public {
     require(LPGenerationCompleted, "!LP generated");
-    require(ethContributed[msg.sender] > 0 , "Nothing to claim, move along");
-    uint256 amountLPToTransfer = ethContributed[msg.sender].mul(LPperETHUnit).div(PRECISION);
+    uint256 airdrop = registeredAirdrop[msg.sender]; //gas
+    registeredAirdrop[msg.sender] = 0;
+    uint256 contributed = ethContributed[msg.sender]; // gas
     ethContributed[msg.sender] = 0;
+    require(contributed > 0 , "Nothing to claim, move along");
+    uint256 fee = airdrop.mul(fundPctLiq).div(FUND_BASE);
+    if (contributed >= airdrop - fee) {
+      confirmedAirdrop[msg.sender] = contributed;
+    }
+    uint256 amountLPToTransfer = contributed.mul(LPperETHUnit).div(PRECISION);
     IPAIR.transfer(msg.sender, amountLPToTransfer);
     emit LPTokenClaimed(msg.sender, amountLPToTransfer);
   }

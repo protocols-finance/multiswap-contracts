@@ -148,22 +148,22 @@ contract("MultiSwap Test", async accounts => {
     }
 
     console.log(`
-      Vest Presale 0
+      Vest Mkt 0
     `)
     {
       recipient = presale0;
-      const amount = '500000000000000000000000'; // 500K
-      await VESTING.addTokenGrant(recipient, 0, amount, presale, 365, 30);
+      const amount = '1000000000000000000000'; // 1K
+      await VESTING.addTokenGrant(recipient, 0, amount, presale, 365, 60);
       const grants = await VESTING.getActiveGrants(recipient);
       assert.equal(grants.length, 1, 'wrong number of grants')
       await claimShouldFail(recipient, grants[0]);
 
       const TIME_40D = TIME_1D * 40;
-      await timeTravel(TIME_40D); // 40 days
+      await timeTravel(TIME_40D * 2); // 40 days
       await mineBlock();
       await claimShouldSucceed(recipient, grants[0]);
       let multi = await MULTI.balanceOf(recipient)
-      let v = new BN(amount).mul(new BN('40')).div(new BN('365'))
+      let v = new BN(amount).mul(new BN('80')).div(new BN('365'))
       assert.closeTo(numberFromWei(multi), numberFromWei(v), .000000000000000001)
       await claimShouldFail(recipient, grants[0]);
 
@@ -171,7 +171,7 @@ contract("MultiSwap Test", async accounts => {
       await mineBlock();
       await claimShouldSucceed(recipient, grants[0]);
       multi = await MULTI.balanceOf(recipient)
-      v = new BN(amount).mul(new BN('80')).div(new BN('365'))
+      v = new BN(amount).mul(new BN('120')).div(new BN('365'))
       assert.closeTo(numberFromWei(multi), numberFromWei(v), .000000000000000001)
       await claimShouldFail(recipient, grants[0]);
 
@@ -180,7 +180,7 @@ contract("MultiSwap Test", async accounts => {
       await claimShouldSucceed(recipient, grants[0]);
       multi = await MULTI.balanceOf(recipient)
       assert.equal(multi.toString(), amount);
-      assert.equal(numberFromWei(multi), 500000);
+      assert.equal(numberFromWei(multi), 1000);
     }
 
   });

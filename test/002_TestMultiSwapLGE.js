@@ -1,6 +1,5 @@
 const MultiSwapToken = artifacts.require("MultiSwapToken");
 const MultiSwapLGE = artifacts.require("MultiSwapLGE");
-const Timelock2Days = artifacts.require("Timelock2Days");
 const IERC20 = artifacts.require("IERC20");
 
 const BN = require('bn.js');
@@ -13,12 +12,17 @@ contract("MultiSwapLGE", async accounts => {
   let MULTI;
   let PAIR;
   let pair;
-  let timelock;
 
+  const deployer = accounts[0];
+  const presale = accounts[1];
+  const lge = accounts[2];
+  const founders = accounts[3];
+  const fundraising = accounts[4];
+  const community = accounts[6];
   const admin = accounts[0];
-  const member1 = accounts[1];
-  const member2 = accounts[2];
-  const member3 = accounts[3];
+  const member1 = accounts[7];
+  const member2 = accounts[8];
+  const member3 = accounts[9];
   const fund = admin;
   const TIME_12H = 60 * 60 * 12;
   const TIME_1H = 60 * 60
@@ -40,6 +44,11 @@ contract("MultiSwapLGE", async accounts => {
 
   const logEther = (msg, wei) => {
     console.log(msg, etherFromWei(wei));
+  }
+
+  const ethBalance = async (from) => {
+    const ethStr = await web3.eth.getBalance(from);
+    return new BN(ethStr);
   }
 
   const timeTravel = function (time) {
@@ -72,7 +81,8 @@ contract("MultiSwapLGE", async accounts => {
     console.log('LGE', LGE.address);
     pair = await LGE.IPAIR();
     PAIR = await IERC20.at(pair);
-    timelock = await Timelock2Days.deployed();
+    await MULTI.approve(LGE.address, '5000000000000000000000000', { from: lge})
+
   });
 
   it("LGE Tests", async () => {
@@ -108,28 +118,19 @@ contract("MultiSwapLGE", async accounts => {
       }  
     }
 
-    // queue and execute startLGE
-    const block = await web3.eth.getBlock('latest')
-    const t = block.timestamp + TIME_1D * 2 + TIME_1H; // current time + 2 days + 1 hour
-    console.log('eta', t);
-    const eta = new BN(t.toString())
-    const value = new BN('0')
-    const sig = 'startLGE()'
-    const data = []
-    try {
-      await timelock.queueTransaction(LGE.address, value, sig, data, eta)
-      await timeTravel(TIME_1D*3)
-      await addLiquidityShouldFail(toWei('1'), member1);
-      await timelock.executeTransaction(LGE.address, value, sig, data, eta)
-    } catch (e) {
-      console.log('timelock queue failed', e)
-    }
+    // startLGE
+    await LGE.startLGE();
+    const ethFundStart = await ethBalance(lge);
+    const lgeFund = await LGE.fund();
+    assert.equal(lge, lgeFund, 'lge fund is incorrect')
 
     // deposit some eth
+    await LGE.registerAirdrop(toWei('1'), {from: member1});
+    await LGE.registerAirdrop(toWei('1.01'), {from: member2});
     await LGE.addLiquidity({value: toWei('1'), from: member1});
     await LGE.addLiquidity({value: toWei('1'), from: member2});
     await addLiquidityShouldFail(toWei('.499'), member1); // too small
-    await addLiquidityShouldFail(toWei('1001'), member1); // too large
+    await addLiquidityShouldFail(toWei('101'), member1); // too large
     await web3.eth.sendTransaction({from: member3, to: LGE.address, value: toWei('.5')}); // goes to receive
         
     await generateLPTokensShouldFail();
@@ -140,23 +141,26 @@ contract("MultiSwapLGE", async accounts => {
     const amount = multiPerEth.mul(totalEth);
     const multiInContract = await MULTI.balanceOf(LGE.address);
     assert.equal(multiInContract.toString(), amount.toString(), 'wrong multi amount');
-    const eth = await web3.eth.getBalance(LGE.address);
-    assert.equal(eth.toString(), totalEth.toString(), 'eth in contract should equal totalETHContributed');
+
+    const eth = await ethBalance(LGE.address);
+
+    const fundEth = eth.sub(totalEth);
+    const fundPct = await LGE.fundPctLiq();
+    const FUND_BASE = new BN('10000');
+    const expectedFundEth = eth.mul(fundPct).div(FUND_BASE);
+    assert.equal(fundEth.toString(), expectedFundEth.toString(), 'fundEth is incorrect');
 
     // generate LP tokens
     await LGE.generateLPTokens();
     await generateLPTokensShouldFail();
     const ethRemain = await web3.eth.getBalance(LGE.address);
-    assert.equal(ethRemain.toString(), '0', 'all ETH should be converted to LP tokens');
+    assert.equal(ethRemain.toString(), '0', 'all ETH should be converted to LP tokens and sent to fund');
 
-    // check fund share
-    const fundshare = await PAIR.balanceOf(fund);
-    logEther('fund LP Tokens', fundshare);
-    const total = await PAIR.balanceOf(LGE.address);
-    const fundPct = await LGE.fundPctLiq();
-    const FUND_BASE = new BN('10000');
-    const calc = total.add(fundshare).mul(fundPct).div(FUND_BASE);
-    assert.equal(calc.toString(), fundshare.toString(), 'fund share should be fundPct of total')
+    // check fund share of eth
+    const ethFundAfter = await ethBalance(lge);
+    const ethFundSent = ethFundAfter.sub(ethFundStart);
+    logEther('ethFundSent', ethFundSent);
+    assert.equal(ethFundSent.toString(), fundEth, 'eth sent to fund incorrect');
 
     await LGE.claimLPTokens({from: member1});
     await claimLPTokensShouldFail(member1);
@@ -179,10 +183,10 @@ contract("MultiSwapLGE", async accounts => {
     const dust = new BN('10');
     assert.isTrue(endShare.lte(dust), 'all LP tokens should be claimed');
 
-    const multiInFund = await MULTI.balanceOf(fund);
-    const fundPctToken = await LGE.fundPctToken();
-    const calcTokenFund = multiInContract.mul(fundPctToken).div(FUND_BASE);
-    assert.equal(multiInFund.toString(), calcTokenFund.toString());
+    const confirmed1 = await LGE.confirmedAirdrop(member1);
+    assert.isTrue(!confirmed1.isZero(), 'member1 should have a confirmed airdrop');
+    const confirmed2 = await LGE.confirmedAirdrop(member2);
+    assert.isTrue(confirmed2.isZero(), 'member2 confirmed airdrop should be 0');
 
   });
 
