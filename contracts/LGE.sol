@@ -10,7 +10,7 @@ import "./interfaces/IUniswapV2Pair.sol";
 import "./interfaces/IUniswapV2Factory.sol";
 import "./interfaces/IUniswapV2Router02.sol";
 
-contract MultiSwapLGE is Ownable {
+contract LGE is Ownable {
   using SafeMath for uint256;
   using Address for address;
   using SafeERC20 for IERC20;
@@ -21,13 +21,13 @@ contract MultiSwapLGE is Ownable {
   address public fund;
   uint256 public fundFee;
   uint256 public fundPctLiq = 2000;
-  uint256 constant FUND_BASE = 10000;
 
+  uint256 constant FUND_BASE = 10000;
   uint256 constant MIN_FUND_PCT = 1000;
   uint256 constant MAX_FUND_PCT = 5000;
   uint256 constant MIN_LGE_LENGTH = 2 hours;
   uint256 constant MAX_LGE_LENGTH = 14 days;
-  uint256 constant MIN_MULTI_PER_ETH = 1;
+  uint256 constant MIN_TOKEN_PER_ETH = 1;
   uint256 constant MIN_MIN_ETH = 1 ether / 10;
   uint256 constant MAX_MIN_ETH = 2 ether;
   uint256 constant MIN_MAX_ETH = 10 ether;
@@ -37,7 +37,7 @@ contract MultiSwapLGE is Ownable {
   uint256 constant PRECISION = 1e18;
 
   IWETH Iweth;
-  IERC20 IMULTI;
+  IERC20 ITOKEN;
   IUniswapV2Factory uniswapFactory;
   IUniswapV2Router02 uniswapRouterV2;
 
@@ -49,7 +49,7 @@ contract MultiSwapLGE is Ownable {
   uint256 minEth = 1 ether / 2;
   uint256 maxEth = 100 ether;
   uint256 cap = 1000 ether;
-  uint256 public multiPerEth = 3000;
+  uint256 public tokenPerEth = 2000;
   uint256 public lgeLength = 7 days;
   uint256 public contractStartTimestamp;
   bool public LGEFinished;
@@ -59,22 +59,20 @@ contract MultiSwapLGE is Ownable {
   bool public LPGenerationCompleted;
   mapping (address => uint)  public ethContributed;
 
-  constructor(address multi, address owner, address _fund) public Ownable(owner) {
+  constructor(address token, address owner, address _fund) public Ownable(owner) {
     fund = _fund;
     uniswapFactory = IUniswapV2Factory(0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f);
     uniswapRouterV2 = IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
 
-    IMULTI = IERC20(multi);
+    ITOKEN = IERC20(token);
     address WETH = uniswapRouterV2.WETH();
     Iweth = IWETH(WETH);
-    address _pair = uniswapFactory.getPair(WETH, multi);
-    require(_pair == address(0), 'pair must not exist');
-    IPAIR = IUniswapV2Pair(uniswapFactory.createPair(WETH, multi));
   }
 
   function registerAirdrop(uint256 total) external {
-    airdropTotal += total;
-    registeredAirdrop[msg.sender] = registeredAirdrop[msg.sender] + total;
+    uint256 current = registeredAirdrop[msg.sender];
+    registeredAirdrop[msg.sender] = total;
+    airdropTotal = airdropTotal - current + total;
   }
 
   function setMinEth(uint256 _minEth) onlyOwner external {
@@ -92,14 +90,24 @@ contract MultiSwapLGE is Ownable {
     cap = _cap;
   }
 
+  function setFund(address _fund) onlyOwner external {
+    require(_fund != address(0));
+    fund = _fund;
+  }
+
+  function setToken(address _token) onlyOwner external {
+    require(_token != address(0));
+    ITOKEN = IERC20(_token);
+  }
+
   function setFundPctLiq(uint256 _fundPctLiq) onlyOwner external {
     require(_fundPctLiq == 0 || (_fundPctLiq >= MIN_FUND_PCT && _fundPctLiq <= MAX_FUND_PCT));
     fundPctLiq = _fundPctLiq;
   }
 
-  function setMultiPerEth(uint256 _multiPerEth) onlyOwner external {
-    require(_multiPerEth >= MIN_MULTI_PER_ETH, '!multiPerEth');
-    multiPerEth = _multiPerEth;
+  function setTokenPerEth(uint256 _tokenPerEth) onlyOwner external {
+    require(_tokenPerEth >= MIN_TOKEN_PER_ETH, '!tokenPerEth');
+    tokenPerEth = _tokenPerEth;
   }
 
   function setLGELength(uint256 _lgeLength) onlyOwner external {
@@ -138,13 +146,20 @@ contract MultiSwapLGE is Ownable {
     require(LPGenerationCompleted == false, "LP tokens already generated");
     uint256 total = totalETHContributed; // gas
 
+    // create pair
+    address _pair = uniswapFactory.getPair(address(Iweth), address(ITOKEN));
+    if (_pair == address(0)) {
+      _pair = uniswapFactory.createPair(address(Iweth), address(ITOKEN));
+    }
+    IPAIR = IUniswapV2Pair(_pair);
+
     //Wrap eth
     Iweth.deposit{ value: total }();
     require(IERC20(address(Iweth)).balanceOf(address(this)) == total, '!weth');
     Iweth.transfer(address(IPAIR), total);
 
-    uint256 multiBalance = IMULTI.balanceOf(address(this));
-    IMULTI.safeTransfer(address(IPAIR), multiBalance);
+    uint256 tokenBalance = ITOKEN.balanceOf(address(this));
+    ITOKEN.safeTransfer(address(IPAIR), tokenBalance);
     IPAIR.mint(address(this));
     totalLPTokensMinted = IPAIR.balanceOf(address(this));
     require(totalLPTokensMinted != 0 , "LP creation failed");
@@ -178,9 +193,9 @@ contract MultiSwapLGE is Ownable {
     require(ethContributed[msg.sender] <= maxEth);
     totalETHContributed = totalETHContributed.add(contrib);
     require(totalETHContributed <= cap, '!cap');
-    uint256 amount = contrib * multiPerEth;
+    uint256 amount = contrib * tokenPerEth;
     if (amount > 0) {
-      IMULTI.safeTransferFrom(fund, address(this), amount);
+      ITOKEN.safeTransferFrom(fund, address(this), amount);
     }
     emit LiquidityAdded(msg.sender, msg.value);
   }

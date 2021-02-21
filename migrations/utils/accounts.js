@@ -47,7 +47,6 @@ module.exports = function(accounts, network) {
     isProduction,
     isDev,
     dev,
-    deployer,
     presaleFund,
     lgeFund,
     foundersFund,

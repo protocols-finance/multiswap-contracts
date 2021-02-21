@@ -1,5 +1,5 @@
 const MultiSwapToken = artifacts.require("MultiSwapToken");
-const MultiSwapLGE = artifacts.require("MultiSwapLGE");
+const LGEContract = artifacts.require("LGE");
 const IERC20 = artifacts.require("IERC20");
 
 const BN = require('bn.js');
@@ -77,10 +77,8 @@ contract("MultiSwapLGE", async accounts => {
   beforeEach(async () => {
     MULTI = await MultiSwapToken.deployed();
     console.log('MULTI', MULTI.address);
-    LGE = await MultiSwapLGE.deployed();
+    LGE = await LGEContract.deployed();
     console.log('LGE', LGE.address);
-    pair = await LGE.IPAIR();
-    PAIR = await IERC20.at(pair);
     await MULTI.approve(LGE.address, '5000000000000000000000000', { from: lge})
 
   });
@@ -136,7 +134,7 @@ contract("MultiSwapLGE", async accounts => {
     await generateLPTokensShouldFail();
     await timeTravel(TIME_1D * 7 + TIME_1H);
 
-    const multiPerEth = await LGE.multiPerEth();
+    const multiPerEth = await LGE.tokenPerEth();
     const totalEth = await LGE.totalETHContributed();
     const amount = multiPerEth.mul(totalEth);
     const multiInContract = await MULTI.balanceOf(LGE.address);
@@ -153,6 +151,8 @@ contract("MultiSwapLGE", async accounts => {
     // generate LP tokens
     await LGE.generateLPTokens();
     await generateLPTokensShouldFail();
+    pair = await LGE.IPAIR();
+    PAIR = await IERC20.at(pair);
     const ethRemain = await web3.eth.getBalance(LGE.address);
     assert.equal(ethRemain.toString(), '0', 'all ETH should be converted to LP tokens and sent to fund');
 
